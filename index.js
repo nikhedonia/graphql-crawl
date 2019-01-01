@@ -4,31 +4,38 @@ import superagent from 'superagent';
 import cheerio from 'cheerio';
 import Dataloader from 'dataloader';
 
-// Construct a schema, using GraphQL schema language
 
-
+// Let's cache all the responses
 const urlLoader = new Dataloader(urls => Promise.all(urls.map(u=>superagent.get(u))));
-
 const get = url => urlLoader.load(url)
 
 
 const typeDefs = gql`
-  type Node {
-    attr(name: String): String
-    text: String,
-    follow: Html,
-    css(sel: String!, start: Int, end: Int) : [Node]
-  }
+type Node {
+  # get value of Node attribute
+  attr(name: String): String
+  text: String,
+  # follow href
+  follow: Html,
+  # query children of node
+  css(sel: String!, start: Int, end: Int) : [Node]
+}
 
-  type Html {
-    url: String
-    css (sel: String!, start: Int, end: Int) : [Node]
-  }
+type Html {
+  url: String
+  # sel: css selector
+  # start/end: optional parameters to array.slice to limit no. results
+  css (sel: String!, start: Int, end: Int) : [Node]
+}
 
-  type Query {
-    paginate (url: String!, sel: String!, count: Int) : [Html]
-    get(url: String!) : Html
-  }
+type Query {
+  # url: url to scrape
+  # sel: css selector of the <a> that refers to the next page
+  # count: how many pages to scrape
+  # result: array of scraped pages
+  paginate (url: String!, sel: String!, count: Int) : [Html]
+  get(url: String!) : Html
+}
 `;
 
 const css = ({url, $, node}, {sel, start, end}) => {
@@ -86,9 +93,16 @@ const resolvers = {
   Html: {
     url: (html) => html.request.url,
     css: (html, x) => {
-      const $ = cheerio.load(html.text);
-      const url = html.request.url;
-      return css({$, url, node:$('html').get(0)}, x);
+      try {
+        const $ = cheerio.load(html.text);
+        const url = html.request.url;
+        const htmlNode = $('html').get(0);
+        return css({$, url, node: htmlNode}, x);
+      } catch (e) {
+        // Not html...
+        console.log(e);
+        return;
+      }
     }
   }
 };
